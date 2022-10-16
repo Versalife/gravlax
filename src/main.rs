@@ -5,6 +5,9 @@ use clap::Parser;
 
 mod ast;
 mod errors;
+
+#[macro_use]
+extern crate lazy_static;
 mod lexer;
 mod parser;
 
@@ -15,12 +18,20 @@ struct GravlaxCliArgs {
 }
 fn main() -> Result<()> {
     let args = GravlaxCliArgs::parse();
-    let source_code = fs::read_to_string(&args.source_code).with_context(|| {
-        format!(
-            "could not read source file `{}`",
-            &args.source_code.display()
-        )
-    })?;
+    let source_code = fs::read_to_string(&args.source_code)
+        .with_context(|| format!("could not read source file `{}`", &args.source_code.display()))?;
     println!("file content: {}", source_code);
+    let mut lexer = lexer::Lexer::new(source_code);
+    let scanner_output = lexer.lex();
+    match scanner_output {
+        Ok(tokens) => {
+            todo!()
+        }
+        Err(lexing_errors) => {
+            for error in lexing_errors {
+                println!("{}", error)
+            }
+        }
+    }
     Ok(())
 }
