@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     let scanner_output = lexer.lex();
     match scanner_output {
         Ok(tokens) => {
-            todo!()
+            println!("{:?}", tokens);
         }
         Err(lexing_errors) => {
             for error in lexing_errors {

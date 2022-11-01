@@ -35,7 +35,6 @@ impl From<(usize, usize)> for Location {
 }
 
 impl Location {
-
     #[inline]
     fn advance_col(&mut self) {
         self.column_number += 1;
@@ -45,7 +44,6 @@ impl Location {
     fn advance_row(&mut self) {
         self.line_number += 1;
     }
-
 }
 
 #[derive(Error, Debug)]
@@ -255,13 +253,10 @@ impl Display for Token {
                 Literal::VariableName(value) => f.write_str(value),
                 Literal::StringLiteral(value) => f.write_str(value),
             },
-            Self::KeywordToken(keyword) => f.write_str("END_OF_FILE"),
-            Self::Single(character) => f.write_str("END_OF_FILE"),
-            Self::Double(characters) => f.write_str("END_OF_FILE"),
+            _ => f.write_str(TOKEN_TO_LEXEME_MAPPER.get(self).unwrap()),
         }
     }
 }
-
 
 #[derive(Debug)]
 pub struct TokenStream(Vec<Token>);
@@ -289,7 +284,7 @@ impl Lexer {
         let mut code = self.source_code.chars().peekable();
         while let Some(character) = code.next() {
             match character {
-                ' ' | '\r' | '\t' => {},
+                ' ' | '\r' | '\t' => {}
                 '\n' => self.current_location.advance_row(),
                 '(' => tokens.push(LEXEME_TO_TOKEN_MAPPER.get("(").cloned().unwrap()),
                 ')' => tokens.push(LEXEME_TO_TOKEN_MAPPER.get(")").cloned().unwrap()),
@@ -306,6 +301,11 @@ impl Lexer {
                 '<' => Self::probably_add_double_token(&mut tokens, character, &mut code),
                 '>' => Self::probably_add_double_token(&mut tokens, character, &mut code),
                 '/' => Self::probably_consume_comment(&mut tokens, character, &mut self.current_location, &mut code),
+                '"' => Self::probably_add_string_literal(&mut tokens, &mut self.current_location, &mut code),
+                '0'..='9' => Self::probably_add_number_literal(&mut tokens, &mut self.current_location, &mut code),
+                'A'..='Z' | 'a'..='z' | '_' => {
+                    Self::probably_add_identifier_or_keyword(&mut tokens, &mut self.current_location, &mut code)
+                }
                 _ => errors.push(LexerError::UnexpectedCharacter {
                     character,
                     location: self.current_location.clone(),
@@ -350,13 +350,15 @@ impl Lexer {
         let expected_next_char = '/';
         if Self::one_step_look_ahead(expected_next_char, &mut code) {
             let mut advanced_iter = code.skip_while(|&character| character != '\n');
-            debug_assert!(advanced_iter.next() == Some('\n'));
-            current_location.advance_row();
+            match advanced_iter.next() {
+                None => {}
+                Some('\n') => current_location.advance_row(),
+                Some(_) => panic!("we should never hit this arm"),
+            }
         } else {
             let single_token = LEXEME_TO_TOKEN_MAPPER.get(&current_character.to_string());
             tokens.push(single_token.cloned().unwrap())
         }
-
     }
 
     /// Peek at the next character. If it is what we `expect`, we consume it by
@@ -374,4 +376,50 @@ impl Lexer {
         // There is no next character. We are at the end of the file.
         return false;
     }
+
+    /// Called when we encounter a `"`. we scan forward looking for
+    /// a closing `"`. If we find one, we recognize the lexeme between
+    /// the first `"` and the last  `"` we encountered as a string token.
+    ///
+    /// If a closing `"` is not found, that is we reach the end of the file before
+    /// encountering another `"`, we record that as an error.
+    fn probably_add_string_literal(
+        tokens: &mut Vec<Token>,
+        current_location: &mut Location,
+        mut code: &mut Peekable<Chars>,
+    ) -> () {
+        todo!()
+    }
+
+    ///
+    fn probably_add_number_literal(
+        tokens: &mut Vec<Token>,
+        current_location: &mut Location,
+        mut code: &mut Peekable<Chars>,
+    ) -> () {
+        todo!()
+    }
+
+    fn probably_add_identifier_or_keyword(
+        tokens: &mut Vec<Token>,
+        current_location: &mut Location,
+        mut code: &mut Peekable<Chars>,
+    ) -> () {
+        todo!()
+    }
+}
+
+#[test]
+fn test_one_step_look_ahead() {
+    todo!()
+}
+
+#[test]
+fn test_probably_consume_comment() {
+    todo!()
+}
+
+#[test]
+fn test_probably_add_double_token() {
+    todo!()
 }
