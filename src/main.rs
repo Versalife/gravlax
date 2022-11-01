@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use clap::Parser;
 
 mod ast;
-mod errors;
 
 #[macro_use]
 extern crate lazy_static;
