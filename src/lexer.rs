@@ -13,10 +13,10 @@ use SingleCharacterToken::*;
 #[derive(Debug, Default, Clone)]
 pub struct Location {
     /// Our vertical location in the file
-    line_number: usize,
+    line_number: u16,
 
     /// Our horizontal location in the file
-    column_number: usize,
+    column_number: u16,
 }
 
 impl Display for Location {
@@ -25,8 +25,8 @@ impl Display for Location {
     }
 }
 
-impl From<(usize, usize)> for Location {
-    fn from((x, y): (usize, usize)) -> Self {
+impl From<(u16, u16)> for Location {
+    fn from((x, y): (u16, u16)) -> Self {
         Location {
             line_number: x,
             column_number: y,
@@ -42,7 +42,18 @@ impl Location {
 
     #[inline]
     fn advance_row(&mut self) {
+        self.column_number = 0;
         self.line_number += 1;
+    }
+
+    #[inline]
+    fn advance_col_by(&mut self, t: u16) {
+        self.column_number += t;
+    }
+
+    #[inline]
+    fn advance_row_by(&mut self, t: u16) {
+        self.line_number += t;
     }
 }
 
@@ -237,7 +248,7 @@ pub enum Keyword {
 /// All the valid tokens in the `lox` language
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Token {
-    EOF,
+    Eof,
     LiteralToken(Literal),
     KeywordToken(Keyword),
     Single(SingleCharacterToken),
@@ -247,7 +258,7 @@ pub enum Token {
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::EOF => f.write_str("END_OF_FILE"),
+            Self::Eof => f.write_str("END_OF_FILE"),
             Self::LiteralToken(literal) => match literal {
                 Literal::Number(value) => f.write_str(&value.to_string()),
                 Literal::VariableName(value) => f.write_str(value),
@@ -313,8 +324,8 @@ impl Lexer {
             }
             self.current_location.advance_col();
         }
-        tokens.push(Token::EOF);
-        if errors.len() == 0 {
+        tokens.push(Token::Eof);
+        if errors.is_empty() {
             Ok(TokenStream(tokens))
         } else {
             Err(errors)
@@ -323,13 +334,10 @@ impl Lexer {
 
     /// Look ahead one step. Add a [Token::Double] if the next character matched the expected
     /// character. Otherwise add a [Token::Single]
-    fn probably_add_double_token(
-        tokens: &mut Vec<Token>,
-        current_character: char,
-        mut code: &mut Peekable<Chars>,
-    ) -> () {
+    fn probably_add_double_token(tokens: &mut Vec<Token>, current_character: char, code: &mut Peekable<Chars>) {
         let expected_next_character = '=';
-        if Self::one_step_look_ahead(expected_next_character, &mut code) {
+        if Self::one_step_look_ahead(expected_next_character, code) {
+            // TODO: Advance column by 1
             let double_lexeme = format!("{}{}", current_character, expected_next_character);
             tokens.push(LEXEME_TO_TOKEN_MAPPER.get(&double_lexeme).cloned().unwrap());
         } else {
@@ -345,10 +353,10 @@ impl Lexer {
         tokens: &mut Vec<Token>,
         current_character: char,
         current_location: &mut Location,
-        mut code: &mut Peekable<Chars>,
-    ) -> () {
+        code: &mut Peekable<Chars>,
+    ) {
         let expected_next_char = '/';
-        if Self::one_step_look_ahead(expected_next_char, &mut code) {
+        if Self::one_step_look_ahead(expected_next_char, code) {
             let mut advanced_iter = code.skip_while(|&character| character != '\n');
             match advanced_iter.next() {
                 None => {}
@@ -374,7 +382,7 @@ impl Lexer {
             }
         }
         // There is no next character. We are at the end of the file.
-        return false;
+        false
     }
 
     /// Called when we encounter a `"`. we scan forward looking for
@@ -386,25 +394,38 @@ impl Lexer {
     fn probably_add_string_literal(
         tokens: &mut Vec<Token>,
         current_location: &mut Location,
-        mut code: &mut Peekable<Chars>,
-    ) -> () {
-        todo!()
+        code: &mut Peekable<Chars>,
+    ) {
+        let maybe_string: String = code.take_while(|&character| character != '"').collect();
+        match code.peek() {
+            Some(_) => {
+                // We successfully found a string literal
+                // TODO: How to update the row ( Strings can span multiple lines -- count number of new lines is str?)
+                // TODO: How to update the column value (cur_val + len_str + 1)
+                tokens.push(Token::LiteralToken(Literal::StringLiteral(maybe_string)));
+            },
+            None => {
+                // If we consumed until the end but found not closing `"` we
+                // emit an error.
+                // TODO: Change the signature to take the list of errors
+            }
+        }
     }
 
     ///
     fn probably_add_number_literal(
         tokens: &mut Vec<Token>,
         current_location: &mut Location,
-        mut code: &mut Peekable<Chars>,
-    ) -> () {
+        code: &mut Peekable<Chars>,
+    ) {
         todo!()
     }
 
     fn probably_add_identifier_or_keyword(
         tokens: &mut Vec<Token>,
         current_location: &mut Location,
-        mut code: &mut Peekable<Chars>,
-    ) -> () {
+        code: &mut Peekable<Chars>,
+    ) {
         todo!()
     }
 }
