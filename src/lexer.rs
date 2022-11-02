@@ -45,16 +45,6 @@ impl Location {
         self.column_number = 0;
         self.line_number += 1;
     }
-
-    #[inline]
-    fn advance_col_by(&mut self, t: u16) {
-        self.column_number += t;
-    }
-
-    #[inline]
-    fn advance_row_by(&mut self, t: u16) {
-        self.line_number += t;
-    }
 }
 
 #[derive(Error, Debug)]
@@ -198,12 +188,14 @@ pub enum DoubleCharacterToken {
     LessThanOrEqual,
 }
 
-/// Literals can be numbers, variable names, or strings
+/// Literals can be numbers, variable names, function names, class names, or strings
 /// surrounded by double quotes `"`
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Literal {
     Number(OrderedFloat<f32>),
-    VariableName(String),
+    /// An identifier can be a variable name, a function name ...
+    Identifier(String),
+    /// A string is anything within double quotes `"<string>"`
     StringLiteral(String),
 }
 
@@ -261,7 +253,7 @@ impl Display for Token {
             Self::Eof => f.write_str("END_OF_FILE"),
             Self::LiteralToken(literal) => match literal {
                 Literal::Number(value) => f.write_str(&value.to_string()),
-                Literal::VariableName(value) => f.write_str(value),
+                Literal::Identifier(value) => f.write_str(value),
                 Literal::StringLiteral(value) => f.write_str(value),
             },
             _ => f.write_str(TOKEN_TO_LEXEME_MAPPER.get(self).unwrap()),
@@ -313,10 +305,15 @@ impl Lexer {
                 '>' => Self::probably_add_double_token(&mut tokens, character, &mut code),
                 '/' => Self::probably_consume_comment(&mut tokens, character, &mut self.current_location, &mut code),
                 '"' => Self::probably_add_string_literal(&mut tokens, &mut self.current_location, &mut code),
-                '0'..='9' => Self::probably_add_number_literal(&mut tokens, &mut self.current_location, &mut code),
-                'A'..='Z' | 'a'..='z' | '_' => {
-                    Self::probably_add_identifier_or_keyword(&mut tokens, &mut self.current_location, &mut code)
+                '0'..='9' => {
+                    Self::probably_add_number_literal(&mut tokens, character, &mut self.current_location, &mut code)
                 }
+                'A'..='Z' | 'a'..='z' | '_' => Self::probably_add_identifier_or_keyword(
+                    &mut tokens,
+                    character,
+                    &mut self.current_location,
+                    &mut code,
+                ),
                 _ => errors.push(LexerError::UnexpectedCharacter {
                     character,
                     location: self.current_location.clone(),
@@ -396,36 +393,84 @@ impl Lexer {
         current_location: &mut Location,
         code: &mut Peekable<Chars>,
     ) {
-        let maybe_string: String = code.take_while(|&character| character != '"').collect();
-        match code.peek() {
-            Some(_) => {
-                // We successfully found a string literal
-                // TODO: How to update the row ( Strings can span multiple lines -- count number of new lines is str?)
-                // TODO: How to update the column value (cur_val + len_str + 1)
+        let mut maybe_string = String::new();
+        while let Some(character) = code.next() {
+            if character == '"' {
+                // We found the closing quotes of this string
+                current_location.advance_col();
                 tokens.push(Token::LiteralToken(Literal::StringLiteral(maybe_string)));
-            },
-            None => {
-                // If we consumed until the end but found not closing `"` we
-                // emit an error.
-                // TODO: Change the signature to take the list of errors
+                return;
+            } else {
+                // We treat anything between the quotations as part of the string
+                if character == '\n' {
+                    current_location.advance_row();
+                } else {
+                    current_location.advance_col();
+                }
+                maybe_string.push(character);
+            }
+        }
+        // If we consumed until the end but found not closing `"` we
+        // emit an error.
+        // TODO: Change the signature to take the list of errors
+    }
+
+    /// Called whenever we encounter a char digit.
+    ///
+    /// Consumes characters until we encounter a character that is neither
+    /// a digit nor a `.` (decimal point)
+    fn probably_add_number_literal(
+        tokens: &mut Vec<Token>,
+        first_digit: char,
+        current_location: &mut Location,
+        code: &mut Peekable<Chars>,
+    ) {
+        let mut maybe_number = String::from(first_digit);
+        while let Some(&character) = code.peek() {
+            // Notice that unlike in the book, we allow users to write `123.`.
+            // This will be interpreted as 123.0
+            if character.is_digit(10) || character == '.' {
+                maybe_number.push(character);
+                code.next();
+                current_location.advance_col();
+            } else {
+                // We've reached the end of the digit. We store a number token
+                // TODO: What if the attempt to parse the number fails?
+                // TODO: We should probably guard against numbers larger than f32::MAX
+                let maybe_number_float: f32 = maybe_number.parse().unwrap();
+                tokens.push(Token::LiteralToken(Literal::Number(OrderedFloat(maybe_number_float))));
+                return;
             }
         }
     }
 
-    ///
-    fn probably_add_number_literal(
-        tokens: &mut Vec<Token>,
-        current_location: &mut Location,
-        code: &mut Peekable<Chars>,
-    ) {
-        todo!()
-    }
-
+    /// Called whenever we encounter a character that is neither an operator
+    /// nor part of a string literal. We interpret such as either parts
+    /// of keywords or as variable identifiers.
     fn probably_add_identifier_or_keyword(
         tokens: &mut Vec<Token>,
+        first_character: char,
         current_location: &mut Location,
         code: &mut Peekable<Chars>,
     ) {
+        let mut identifier_or_keyword = String::from(first_character);
+        while let Some(&character) = code.peek() {
+            match character {
+                'A'..='Z' | 'a'..='z' | '_' | '0'..='9' => {
+                    identifier_or_keyword.push(character);
+                    code.next();
+                    current_location.advance_col();
+                }
+                _ => {
+                    // We've reached teh end of the keyword or identifier
+                    match LEXEME_TO_TOKEN_MAPPER.get(&identifier_or_keyword) {
+                        Some(keyword) => tokens.push(keyword.clone()),
+                        None => tokens.push(Token::LiteralToken(Literal::Identifier(identifier_or_keyword))),
+                    }
+                    return;
+                }
+            }
+        }
         todo!()
     }
 }
@@ -442,5 +487,20 @@ fn test_probably_consume_comment() {
 
 #[test]
 fn test_probably_add_double_token() {
+    todo!()
+}
+
+#[test]
+fn test_probably_add_string_literal() {
+    todo!()
+}
+
+#[test]
+fn test_probably_add_number_literal() {
+    todo!()
+}
+
+#[test]
+fn test_probably_add_identifier_or_keyword() {
     todo!()
 }
