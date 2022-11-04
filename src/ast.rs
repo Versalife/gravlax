@@ -13,7 +13,11 @@
 #[derive(Debug)]
 pub enum Expr {
     Unary,
-    Binary,
+    BinOp {
+        op: String,
+        LHS: Box<Expr>,
+        RHS: Box<Expr>
+    },
     Literal,
     Grouping,
 }

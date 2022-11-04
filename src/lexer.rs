@@ -299,16 +299,16 @@ impl Lexer {
                 '.' => tokens.push(LEXEME_TO_TOKEN_MAPPER.get(".").cloned().unwrap()),
                 ';' => tokens.push(LEXEME_TO_TOKEN_MAPPER.get(";").cloned().unwrap()),
                 '*' => tokens.push(LEXEME_TO_TOKEN_MAPPER.get("*").cloned().unwrap()),
-                '!' => Self::probably_add_double_token(&mut tokens, character, &mut code),
-                '=' => Self::probably_add_double_token(&mut tokens, character, &mut code),
-                '<' => Self::probably_add_double_token(&mut tokens, character, &mut code),
-                '>' => Self::probably_add_double_token(&mut tokens, character, &mut code),
-                '/' => Self::probably_consume_comment(&mut tokens, character, &mut self.current_location, &mut code),
-                '"' => Self::probably_add_string_literal(&mut tokens, &mut self.current_location, &mut code),
+                '!' => Self::add_double_or_single_token(&mut tokens, character, &mut code),
+                '=' => Self::add_double_or_single_token(&mut tokens, character, &mut code),
+                '<' => Self::add_double_or_single_token(&mut tokens, character, &mut code),
+                '>' => Self::add_double_or_single_token(&mut tokens, character, &mut code),
+                '/' => Self::consume_comment(&mut tokens, character, &mut self.current_location, &mut code),
+                '"' => Self::add_string_literal(&mut tokens, &mut self.current_location, &mut code),
                 '0'..='9' => {
-                    Self::probably_add_number_literal(&mut tokens, character, &mut self.current_location, &mut code)
+                    Self::add_number_literal(&mut tokens, character, &mut self.current_location, &mut code)
                 }
-                'A'..='Z' | 'a'..='z' | '_' => Self::probably_add_identifier_or_keyword(
+                'A'..='Z' | 'a'..='z' | '_' => Self::add_identifier_or_keyword(
                     &mut tokens,
                     character,
                     &mut self.current_location,
@@ -331,7 +331,7 @@ impl Lexer {
 
     /// Look ahead one step. Add a [Token::Double] if the next character matched the expected
     /// character. Otherwise add a [Token::Single]
-    fn probably_add_double_token(tokens: &mut Vec<Token>, current_character: char, code: &mut Peekable<Chars>) {
+    fn add_double_or_single_token(tokens: &mut Vec<Token>, current_character: char, code: &mut Peekable<Chars>) {
         let expected_next_character = '=';
         if Self::one_step_look_ahead(expected_next_character, code) {
             // TODO: Advance column by 1
@@ -346,7 +346,7 @@ impl Lexer {
     /// Look ahead one character and if the next character is another '/`,
     /// consume the rest of the line. If not, add a single '/' token to the list
     /// to the list
-    fn probably_consume_comment(
+    fn consume_comment(
         tokens: &mut Vec<Token>,
         current_character: char,
         current_location: &mut Location,
@@ -388,13 +388,13 @@ impl Lexer {
     ///
     /// If a closing `"` is not found, that is we reach the end of the file before
     /// encountering another `"`, we record that as an error.
-    fn probably_add_string_literal(
+    fn add_string_literal(
         tokens: &mut Vec<Token>,
         current_location: &mut Location,
         code: &mut Peekable<Chars>,
     ) {
         let mut maybe_string = String::new();
-        while let Some(character) = code.next() {
+        for character in code {
             if character == '"' {
                 // We found the closing quotes of this string
                 current_location.advance_col();
@@ -419,7 +419,7 @@ impl Lexer {
     ///
     /// Consumes characters until we encounter a character that is neither
     /// a digit nor a `.` (decimal point)
-    fn probably_add_number_literal(
+    fn add_number_literal(
         tokens: &mut Vec<Token>,
         first_digit: char,
         current_location: &mut Location,
@@ -429,7 +429,7 @@ impl Lexer {
         while let Some(&character) = code.peek() {
             // Notice that unlike in the book, we allow users to write `123.`.
             // This will be interpreted as 123.0
-            if character.is_digit(10) || character == '.' {
+            if character.is_ascii_digit() || character == '.' {
                 maybe_number.push(character);
                 code.next();
                 current_location.advance_col();
@@ -447,7 +447,7 @@ impl Lexer {
     /// Called whenever we encounter a character that is neither an operator
     /// nor part of a string literal. We interpret such as either parts
     /// of keywords or as variable identifiers.
-    fn probably_add_identifier_or_keyword(
+    fn add_identifier_or_keyword(
         tokens: &mut Vec<Token>,
         first_character: char,
         current_location: &mut Location,
@@ -471,36 +471,38 @@ impl Lexer {
                 }
             }
         }
-        todo!()
     }
 }
 
-#[test]
-fn test_one_step_look_ahead() {
-    todo!()
-}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_one_step_look_ahead() {
+        todo!()
+    }
 
-#[test]
-fn test_probably_consume_comment() {
-    todo!()
-}
+    #[test]
+    fn test_consume_comment() {
+        todo!()
+    }
 
-#[test]
-fn test_probably_add_double_token() {
-    todo!()
-}
+    #[test]
+    fn test_add_double_token() {
+        todo!()
+    }
 
-#[test]
-fn test_probably_add_string_literal() {
-    todo!()
-}
+    #[test]
+    fn test_add_string_literal() {
+        todo!()
+    }
 
-#[test]
-fn test_probably_add_number_literal() {
-    todo!()
-}
+    #[test]
+    fn test_add_number_literal() {
+        todo!()
+    }
 
-#[test]
-fn test_probably_add_identifier_or_keyword() {
-    todo!()
+    #[test]
+    fn test_add_identifier_or_keyword() {
+        todo!()
+    }
 }
