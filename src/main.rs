@@ -9,6 +9,7 @@ mod ast;
 extern crate lazy_static;
 mod lexer;
 mod parser;
+mod shared;
 
 #[derive(Parser)]
 struct GravlaxCliArgs {
