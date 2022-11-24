@@ -192,7 +192,7 @@ where
 /// We use the pair combinator to combine the two parsers into a parser for a tuple of their results,
 /// and then we use the map combinator to select just the result of the first
 /// parse
-fn left<'a, P1, P2, R1, R2>(first_parser: P1, second_parser: P2) -> impl Parser<'a, &'a str, R1>
+fn project_left<'a, P1, P2, R1, R2>(first_parser: P1, second_parser: P2) -> impl Parser<'a, &'a str, R1>
 where
     P1: Parser<'a, &'a str, R1>,
     P2: Parser<'a, &'a str, R2>,
@@ -202,8 +202,8 @@ where
 
 /// We use the pair combinator to combine the two parsers into a parser for a tuple of their results,
 /// and then we use the map combinator to select just the result of the second
-/// parse
-fn right<'a, P1, P2, R1, R2>(first_parser: P1, second_parser: P2) -> impl Parser<'a, &'a str, R2>
+/// parser
+fn project_right<'a, P1, P2, R1, R2>(first_parser: P1, second_parser: P2) -> impl Parser<'a, &'a str, R2>
 where
     P1: Parser<'a, &'a str, R1>,
     P2: Parser<'a, &'a str, R2>,
@@ -213,7 +213,7 @@ where
 
 #[test]
 fn right_combinator() {
-    let tag_opener = right(match_literal("<"), identifier);
+    let tag_opener = project_right(match_literal("<"), identifier);
     assert_eq!(
         Ok(("/>", "my-first-element".to_string()).into()),
         tag_opener.parse("<my-first-element/>")
@@ -256,6 +256,8 @@ fn one_or_more_combinator() {
     assert_eq!(Err(""), parser.parse(""));
 }
 
+/// Uses the provided parser to to generate a list with 0 or more values of the parsers
+/// output
 fn zero_or_more<'a, A>(parser: impl Parser<'a, &'a str, A>) -> impl Parser<'a, &'a str, Vec<A>> {
     move |mut input| {
         // This is an adaptation of the `one_or_more` parser builder to the case of
@@ -281,4 +283,100 @@ fn zero_or_more_combinator() {
     assert_eq!(Ok(("", vec![(), (), ()]).into()), parser.parse("hahaha"));
     assert_eq!(Ok(("ahah", vec![]).into()), parser.parse("ahah"));
     assert_eq!(Ok(("", vec![]).into()), parser.parse(""));
+}
+
+fn any_char(input: &str) -> ParseResult<&str, char> {
+    match input.chars().next() {
+        Some(next) => Ok((&input[next.len_utf8()..], next).into()),
+        _ => Err(input),
+    }
+}
+
+fn predicate<'a, O, P, F>(parser: P, predicate: F) -> impl Parser<'a, &'a str, O>
+where
+    P: Parser<'a, &'a str, O>,
+    F: Fn(&O) -> bool,
+{
+    move |input| match parser.parse(input) {
+        Err(e) => Err(e),
+        Ok(parser_output) => {
+            if predicate(&parser_output.parsed_output) {
+                return Ok(parser_output);
+            }
+            Err(input)
+        }
+    }
+}
+
+#[test]
+fn predicate_combinator() {
+    // Create a parser that parses the character 'o'
+    let parser = predicate(any_char, |c| *c == 'o');
+
+    // The parser should consume the 'o' at the start and return 'mg'
+    assert_eq!(Ok(("mg", 'o').into()), parser.parse("omg"));
+
+    // The parser should fail
+    assert_eq!(Err("lol"), parser.parse("lol"));
+}
+
+fn eat_single_whitespace<'a>() -> impl Parser<'a, &'a str, char> {
+    predicate(any_char, |c| c.is_whitespace())
+}
+
+fn one_or_more_whitespaces<'a>() -> impl Parser<'a, &'a str, Vec<char>> {
+    one_or_more(eat_single_whitespace())
+}
+
+fn zero_or_more_whitespaces<'a>() -> impl Parser<'a, &'a str, Vec<char>> {
+    zero_or_more(eat_single_whitespace())
+}
+
+fn eat_quoted_string<'a>() -> impl Parser<'a, &'a str, String> {
+    let eat_opening_quote = match_literal("\"");
+    let eat_closing_quote = match_literal("\"");
+    let eat_string_chars = zero_or_more(predicate(any_char, |&c| c != '"'));
+
+    map(
+        project_right(eat_opening_quote, project_left(eat_string_chars, eat_closing_quote)),
+        |chars| chars.iter().collect(),
+    )
+}
+
+#[test]
+fn quoted_string_parser() {
+    let parser = eat_quoted_string();
+    assert_eq!(
+        Ok(("", "Hello There".to_string()).into()),
+        parser.parse("\"Hello There\"")
+    )
+}
+
+type AttributePair = (String, String);
+
+/// Create a parser that parses strings orf the form, `attribute_name="attribute_value"`
+fn eat_attribute_pair<'a>() -> impl Parser<'a, &'a str, AttributePair> {
+    pair(identifier, project_right(match_literal("="), eat_quoted_string()))
+}
+
+/// Zero or more occurrences of the following: one or more whitespace characters, then an attribute pair.
+/// We use right to discard the whitespace and keep the attribute pair.
+fn eat_all_attribute_pairs<'a>() -> impl Parser<'a, &'a str, Vec<AttributePair>> {
+    let eat_space_then_attribute = project_right(one_or_more_whitespaces(), eat_attribute_pair());
+    zero_or_more(eat_space_then_attribute)
+}
+
+#[test]
+fn attribute_parser() {
+    assert_eq!(
+        Ok((
+            "",
+            vec![
+                ("one".to_string(), "1".to_string()),
+                ("two".to_string(), "2".to_string())
+            ]
+        )
+            .into()),
+        eat_all_attribute_pairs().parse(" one=\"1\" two=\"2\"")
+    );
 }

@@ -3,6 +3,7 @@
         "combinators",
         "Gravlax",
         "Peekable",
-        "thiserror"
+        "thiserror",
+        "whitespaces"
     ]
 }
