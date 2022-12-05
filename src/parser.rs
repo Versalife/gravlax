@@ -359,9 +359,10 @@ fn eat_attribute_pair<'a>() -> impl Parser<'a, &'a str, AttributePair> {
     pair(identifier, project_right(match_literal("="), eat_quoted_string()))
 }
 
+type AttributePairs = Vec<AttributePair>;
 /// Zero or more occurrences of the following: one or more whitespace characters, then an attribute pair.
 /// We use right to discard the whitespace and keep the attribute pair.
-fn eat_all_attribute_pairs<'a>() -> impl Parser<'a, &'a str, Vec<AttributePair>> {
+fn eat_all_attribute_pairs<'a>() -> impl Parser<'a, &'a str, AttributePairs> {
     let eat_space_then_attribute = project_right(one_or_more_whitespaces(), eat_attribute_pair());
     zero_or_more(eat_space_then_attribute)
 }
@@ -378,5 +379,38 @@ fn attribute_parser() {
         )
             .into()),
         eat_all_attribute_pairs().parse(" one=\"1\" two=\"2\"")
+    );
+}
+
+type XmlElementStart = (String, AttributePairs);
+fn eat_element_start<'a>() -> impl Parser<'a, &'a str, XmlElementStart> {
+    let eat_opening_angle_bracket = match_literal("<");
+    let eat_identifier_then_all_attributes = pair(identifier, eat_all_attribute_pairs());
+    project_right(eat_opening_angle_bracket, eat_identifier_then_all_attributes)
+}
+
+fn parse_single_element<'a>() -> impl Parser<'a, &'a str, Element> {
+    let start = project_left(eat_element_start(), match_literal("/>"));
+    let element_constructor = |(name, attributes)| Element {
+        name,
+        attributes,
+        children: vec![],
+    };
+    map(start, element_constructor)
+}
+
+
+#[test]
+fn single_element_parser() {
+    assert_eq!(
+        Ok((
+            "",
+            Element {
+                name: "div".to_string(),
+                attributes: vec![("class".to_string(), "float".to_string())],
+                children: vec![]
+            }
+        ).into()),
+        parse_single_element().parse("<div class=\"float\"/>")
     );
 }
