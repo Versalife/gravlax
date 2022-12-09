@@ -32,6 +32,42 @@ type ParseResult<'a, Input, Output> = Result<ParserOutput<Input, Output>, Parser
 
 trait Parser<'a, Input, Output> {
     fn parse(&self, input: Input) -> ParseResult<'a, Input, Output>;
+
+    /// Transforms the output of this parser from `[OutPut]` to the `[TargetOutput]`
+    fn map<MappingFunction, TargetOutput>(self, map_fn: MappingFunction) -> BoxedParser<'a, Input, TargetOutput>
+    where
+        Self: Sized + 'a,
+        Output: 'a,
+        TargetOutput: 'a,
+        MappingFunction: Fn(Output) -> TargetOutput + 'a,
+    {
+        let parser = move |input: Input| {
+            self.parse(input)
+                .map(|parser_out| (parser_out.remainder, map_fn(parser_out.parsed_output)).into())
+        };
+        BoxedParser::new(parser)
+    }
+
+    fn pair_with<P2, P2Output>(self, second_parser: P2) -> BoxedParser<'a, Input, (Output, P2Output)>
+    where
+        Self: Sized + 'a,
+        Output: 'a,
+        P2Output: 'a,
+        P2: Parser<'a, Input, P2Output> + 'a,
+    {
+        let paired_parser = move |input: Input| {
+            self.parse(input).and_then(|first_parser_output| {
+                second_parser
+                    .parse(first_parser_output.remainder)
+                    .map(|second_parser_output| {
+                        let combined_output = (first_parser_output.parsed_output, second_parser_output.parsed_output);
+                        let remaining_input = second_parser_output.remainder;
+                        ParserOutput::from((remaining_input, combined_output))
+                    })
+            })
+        };
+        BoxedParser::new(paired_parser)
+    }
 }
 
 // implement the `Parse` trait on all parsing functions
@@ -41,6 +77,24 @@ where
 {
     fn parse(&self, input: Input) -> ParseResult<'a, Input, Output> {
         self(input)
+    }
+}
+
+struct BoxedParser<'a, Input, Output> {
+    parser: Box<dyn Parser<'a, Input, Output> + 'a>,
+}
+
+impl<'a, Input, Output> BoxedParser<'a, Input, Output> {
+    fn new<P: Parser<'a, Input, Output> + 'a>(parser: P) -> Self {
+        BoxedParser {
+            parser: Box::new(parser),
+        }
+    }
+}
+
+impl<'a, Input, Output> Parser<'a, Input, Output> for BoxedParser<'a, Input, Output> {
+    fn parse(&self, input: Input) -> ParseResult<'a, Input, Output> {
+        self.parser.parse(input)
     }
 }
 
@@ -336,11 +390,8 @@ fn eat_quoted_string<'a>() -> impl Parser<'a, &'a str, String> {
     let eat_opening_quote = match_literal("\"");
     let eat_closing_quote = match_literal("\"");
     let eat_string_chars = zero_or_more(predicate(any_char, |&c| c != '"'));
-
-    map(
-        project_right(eat_opening_quote, project_left(eat_string_chars, eat_closing_quote)),
-        |chars| chars.iter().collect(),
-    )
+    project_right(eat_opening_quote, project_left(eat_string_chars, eat_closing_quote))
+        .map(|chars| chars.into_iter().collect())
 }
 
 #[test]
@@ -399,7 +450,6 @@ fn parse_single_element<'a>() -> impl Parser<'a, &'a str, Element> {
     map(start, element_constructor)
 }
 
-
 #[test]
 fn single_element_parser() {
     assert_eq!(
@@ -410,7 +460,8 @@ fn single_element_parser() {
                 attributes: vec![("class".to_string(), "float".to_string())],
                 children: vec![]
             }
-        ).into()),
+        )
+            .into()),
         parse_single_element().parse("<div class=\"float\"/>")
     );
 }
