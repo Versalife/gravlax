@@ -92,6 +92,34 @@ impl<'a, Input, Output> BoxedParser<'a, Input, Output> {
     }
 }
 
+impl<'a, Input, P1Output, P2Output> BoxedParser<'a, Input, (P1Output, P2Output)> {
+    /// We use the pair combinator to combine the two parsers into a parser for a tuple of their results,
+    /// and then we use the map combinator to select just the result of the first
+    /// parse
+    fn project_left(self) -> BoxedParser<'a, Input, P1Output>
+    where
+        Input: 'a,
+        P1Output: 'a,
+        P2Output: 'a,
+    {
+        let left_parser = self.map(|(left, _right)| left);
+        BoxedParser::new(left_parser)
+    }
+
+    /// We use the pair combinator to combine the two parsers into a parser for a tuple of their results,
+    /// and then we use the map combinator to select just the result of the second
+    /// parser
+    fn project_right(self) -> BoxedParser<'a, Input, P2Output>
+    where
+        Input: 'a,
+        P1Output: 'a,
+        P2Output: 'a,
+    {
+        let right_parser = self.map(|(_left, right)| right);
+        BoxedParser::new(right_parser)
+    }
+}
+
 impl<'a, Input, Output> Parser<'a, Input, Output> for BoxedParser<'a, Input, Output> {
     fn parse(&self, input: Input) -> ParseResult<'a, Input, Output> {
         self.parser.parse(input)
@@ -390,7 +418,10 @@ fn eat_quoted_string<'a>() -> impl Parser<'a, &'a str, String> {
     let eat_opening_quote = match_literal("\"");
     let eat_closing_quote = match_literal("\"");
     let eat_string_chars = zero_or_more(predicate(any_char, |&c| c != '"'));
-    project_right(eat_opening_quote, project_left(eat_string_chars, eat_closing_quote))
+    
+    eat_opening_quote
+        .pair_with(eat_string_chars.pair_with(eat_closing_quote).project_left())
+        .project_right()
         .map(|chars| chars.into_iter().collect())
 }
 
